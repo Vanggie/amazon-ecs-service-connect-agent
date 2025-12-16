@@ -620,7 +620,19 @@ address:
 func TestBuildNode(t *testing.T) {
 	setup()
 	metadata := structpb.NewNullValue().GetStructValue()
-	checkMessage(t, buildNode("id", "cluster", metadata), `
+	checkMessage(t, buildNode("id", "cluster", "us-west-2", "use1-az1", metadata), `
+id: id
+cluster: cluster
+locality:
+  region: us-west-2
+  zone: use1-az1
+`)
+}
+
+func TestBuildNodeWithEmptyZone(t *testing.T) {
+	setup()
+	metadata := structpb.NewNullValue().GetStructValue()
+	checkMessage(t, buildNode("id", "cluster", "us-west-2", "", metadata), `
 id: id
 cluster: cluster
 `)
@@ -633,9 +645,12 @@ func TestBuildNodeMetadata_ContainerIPMapping(t *testing.T) {
 	metadata, err := buildMetadataForNode()
 	assert.Nil(t, err)
 	// ignore metadata: aws.appmesh.platformInfo & aws.appmesh.task.interfaces
-	checkMessageSupersetMatch(t, buildNode("id", "cluster", metadata), `
+	checkMessageSupersetMatch(t, buildNode("id", "cluster", "us-west-2", "use1-az1", metadata), `
 id: id
 cluster: cluster
+locality:
+  region: us-west-2
+  zone: use1-az1
 metadata:
   aws.ecs.serviceconnect.ClusterIPMapping:
     C1: 172.10.1.1
@@ -650,9 +665,12 @@ func TestBuildNodeMetadata_ListenerPortMapping(t *testing.T) {
 	metadata, err := buildMetadataForNode()
 	assert.Nil(t, err)
 	// ignore metadata: aws.appmesh.platformInfo & aws.appmesh.task.interfaces
-	checkMessageSupersetMatch(t, buildNode("id", "cluster", metadata), `
+	checkMessageSupersetMatch(t, buildNode("id", "cluster", "us-west-2", "use1-az1", metadata), `
 id: id
 cluster: cluster
+locality:
+  region: us-west-2
+  zone: use1-az1
 metadata:
   aws.ecs.serviceconnect.ListenerPortMapping:
     Listener1: 15000
@@ -665,9 +683,12 @@ func TestBuildNodeMetadata_StaticRuntimeMappingDefault(t *testing.T) {
 	metadata, err := buildMetadataForNode()
 	assert.Nil(t, err)
 	// ignore metadata: aws.appmesh.platformInfo & aws.appmesh.task.interfaces
-	checkMessageSupersetMatch(t, buildNode("id", "cluster", metadata), `
+	checkMessageSupersetMatch(t, buildNode("id", "cluster", "us-west-2", "use1-az1", metadata), `
 id: id
 cluster: cluster
+locality:
+  region: us-west-2
+  zone: use1-az1
 metadata:
   aws.appmesh.static_runtime:
     envoy.features.enable_all_deprecated_features: true
@@ -691,9 +712,12 @@ func TestBuildNodeMetadata_StaticRuntimeMappingDefaultOverridden(t *testing.T) {
 	metadata, err := buildMetadataForNode()
 	assert.Nil(t, err)
 	// ignore metadata: aws.appmesh.platformInfo & aws.appmesh.task.interfaces
-	checkMessageSupersetMatch(t, buildNode("id", "cluster", metadata), `
+	checkMessageSupersetMatch(t, buildNode("id", "cluster", "us-west-2", "use1-az1", metadata), `
 id: id
 cluster: cluster
+locality:
+  region: us-west-2
+  zone: use1-az1
 metadata:
   aws.appmesh.static_runtime:
     envoy.features.enable_all_deprecated_features: true
@@ -841,6 +865,7 @@ func TestBuildClusterManager(t *testing.T) {
 	checkMessage(t, buildClusterManager(), `
 outlierDetection:
   eventLogPath: /dev/stdout
+localClusterName: `+config.ENVOY_LOCAL_CLUSTER_NAME+`
 `)
 }
 
@@ -850,6 +875,7 @@ func TestBuildClusterManager_CustomOutlierDetection(t *testing.T) {
 	checkMessage(t, buildClusterManager(), `
 outlierDetection:
   eventLogPath: /custom/path
+localClusterName: `+config.ENVOY_LOCAL_CLUSTER_NAME+`
 `)
 }
 
@@ -1630,6 +1656,27 @@ tracing:
       collectorEndpoint: /api/v2/spans
       collectorEndpointVersion: HTTP_JSON
       sharedSpanContext: false
+`)
+}
+
+func TestAppendStaticLocalCluster(t *testing.T) {
+	setup()
+	b := &boot.Bootstrap{}
+	err := appendStaticLocalCluster(b)
+	if err != nil {
+		t.Error(err)
+	}
+	checkMessage(t, b, `
+staticResources:
+  clusters:
+    - name: `+config.ENVOY_LOCAL_CLUSTER_NAME+`
+      connectTimeout: 30s
+      type: EDS
+      edsClusterConfig:
+        edsConfig:
+          ads: {}
+          initialFetchTimeout: 0s
+          resourceApiVersion: V3
 `)
 }
 

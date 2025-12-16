@@ -493,10 +493,18 @@ func buildAdmin(agentConfig config.AgentConfig) (*boot.Admin, error) {
 	}
 }
 
-func buildNode(id string, cluster string, metadata *structpb.Struct) *core.Node {
+func buildNode(id string, cluster string, region string, zone string, metadata *structpb.Struct) *core.Node {
+	if zone == "" {
+		return &core.Node{
+			Id:       id,
+			Cluster:  cluster,
+			Metadata: metadata,
+		}
+	}
 	return &core.Node{
 		Id:       id,
 		Cluster:  cluster,
+		Locality: &core.Locality{Zone: zone, Region: region},
 		Metadata: metadata,
 	}
 }
@@ -543,6 +551,7 @@ func buildClusterManager() *boot.ClusterManager {
 		OutlierDetection: &boot.ClusterManager_OutlierDetection{
 			EventLogPath: logPath,
 		},
+		LocalClusterName: config.ENVOY_LOCAL_CLUSTER_NAME,
 	}
 }
 
@@ -845,6 +854,32 @@ func appendXRayTracing(b *boot.Bootstrap, nodeId string, cluster string, fileUti
 				Name: "envoy.tracers.xray",
 				ConfigType: &trace.Tracing_Http_TypedConfig{
 					TypedConfig: packedCfg,
+				},
+			},
+		},
+	}
+	return mergeBootstrap(b, bt)
+}
+
+func appendStaticLocalCluster(b *boot.Bootstrap) error {
+	configSource, err := buildAdsConfigSource()
+	if err != nil {
+		return err
+	}
+	bt := &boot.Bootstrap{
+		StaticResources: &boot.Bootstrap_StaticResources{
+			Clusters: []*cluster.Cluster{
+				&cluster.Cluster{
+					Name: config.ENVOY_LOCAL_CLUSTER_NAME,
+					ConnectTimeout: &durationpb.Duration{
+						Seconds: 30,
+					},
+					ClusterDiscoveryType: &cluster.Cluster_Type{
+						Type: cluster.Cluster_EDS,
+					},
+					EdsClusterConfig: &cluster.Cluster_EdsClusterConfig{
+						EdsConfig: configSource,
+					},
 				},
 			},
 		},
@@ -1451,6 +1486,11 @@ func bootstrap(agentConfig config.AgentConfig, fileUtil FileUtil, envoyCLIInst E
 		return nil, err
 	}
 
+	region, err := getRegion()
+	if err != nil {
+		return nil, err
+	}
+
 	var dr *boot.Bootstrap_DynamicResources
 	if agentConfig.XdsEndpointUdsPath != "" {
 		dr, err = buildDynamicResourcesForRelayEndpoint(agentConfig.XdsEndpointUdsPath)
@@ -1458,11 +1498,6 @@ func bootstrap(agentConfig config.AgentConfig, fileUtil FileUtil, envoyCLIInst E
 			return nil, err
 		}
 	} else {
-		region, err := getRegion()
-		if err != nil {
-			return nil, err
-		}
-
 		xdsEndpoint, err := getRegionalXdsEndpoint(region, envoyCLIInst)
 		if err != nil || xdsEndpoint == nil {
 			return nil, err
@@ -1489,13 +1524,17 @@ func bootstrap(agentConfig config.AgentConfig, fileUtil FileUtil, envoyCLIInst E
 		return nil, err
 	}
 
+	zone := platforminfo.GetZoneId(metadata)
+
 	b := &boot.Bootstrap{
 		Admin:            admin,
-		Node:             buildNode(id, clusterId, metadata),
+		Node:             buildNode(id, clusterId, region, zone, metadata),
 		LayeredRuntime:   lr,
 		DynamicResources: dr,
 		ClusterManager:   buildClusterManager(),
 	}
+	// Static cluster
+	appendStaticLocalCluster(b)
 
 	// Tracing
 	if v := env.Get("ENVOY_TRACING_CFG_FILE"); v == "" {
