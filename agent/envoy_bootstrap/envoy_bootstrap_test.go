@@ -34,6 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -633,6 +634,15 @@ func TestBuildNodeWithEmptyZone(t *testing.T) {
 	setup()
 	metadata := structpb.NewNullValue().GetStructValue()
 	checkMessage(t, buildNode("id", "cluster", "us-west-2", "", metadata), `
+id: id
+cluster: cluster
+`)
+}
+
+func TestBuildNodeWithEmptyRegion(t *testing.T) {
+	setup()
+	metadata := structpb.NewNullValue().GetStructValue()
+	checkMessage(t, buildNode("id", "cluster", "", "use1-az1", metadata), `
 id: id
 cluster: cluster
 `)
@@ -1670,13 +1680,38 @@ func TestAppendStaticLocalCluster(t *testing.T) {
 staticResources:
   clusters:
     - name: `+config.ENVOY_LOCAL_CLUSTER_NAME+`
-      connectTimeout: 30s
       type: EDS
       edsClusterConfig:
         edsConfig:
           ads: {}
-          initialFetchTimeout: 0s
+          initialFetchTimeout: 0.000000001s
           resourceApiVersion: V3
+`)
+}
+
+func TestBuildAdsConfigSource(t *testing.T) {
+	setup()
+	timeout := &durationpb.Duration{Seconds: 30}
+	configSource, err := buildAdsConfigSource(timeout)
+	if err != nil {
+		t.Error(err)
+	}
+	checkMessage(t, configSource, `
+initialFetchTimeout: 30s
+ads: {}
+resourceApiVersion: V3
+`)
+}
+
+func TestBuildAdsConfigSourceWithNilTimeout(t *testing.T) {
+	setup()
+	configSource, err := buildAdsConfigSource(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	checkMessage(t, configSource, `
+ads: {}
+resourceApiVersion: V3
 `)
 }
 
