@@ -62,8 +62,8 @@ const (
 	ec2MetadataHost             = "http://169.254.169.254"
 	azQuery                     = "placement/availability-zone"
 	azIDQuery                   = "placement/availability-zone-id"
-	AvailabilityZoneKey         = "AvailabilityZone"
-	AvailabilityZoneIDKey       = "AvailabilityZoneID"
+	AvailabilityZone            = "AvailabilityZone"
+	AvailabilityZoneID          = "AvailabilityZoneID"
 	supportedIPFamiliesKey      = "supportedIPFamilies"
 	ec2MetadataTokenResource    = "/latest/api/token"
 	ec2ImdsTokenHeader          = "X-aws-ec2-metadata-token"
@@ -102,7 +102,7 @@ func buildMetadataForK8sPlatform(mapping map[string]interface{}) {
 		if availabilityZone, err := getEc2InstanceMetadata(azQuery); err != nil {
 			log.Warnf("Couldn't determine the AZ due to: %v", err)
 		} else if availabilityZone != "" {
-			mapping[AvailabilityZoneKey] = availabilityZone
+			mapping[AvailabilityZone] = availabilityZone
 		}
 		// Fetch AZ ID info as AZ can map differently for each account but AZ IDs are the same for
 		// every account https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html
@@ -110,7 +110,7 @@ func buildMetadataForK8sPlatform(mapping map[string]interface{}) {
 			// Just log info if we can't get this information
 			log.Warnf("Couldn't determine the AZ ID due to: %v", err)
 		} else if availabilityZoneID != "" {
-			mapping[AvailabilityZoneIDKey] = availabilityZoneID
+			mapping[AvailabilityZoneID] = availabilityZoneID
 		}
 	}
 }
@@ -141,14 +141,14 @@ func buildMetadataForEcsPlatform(mapping map[string]interface{}) {
 			supportedIPFamilies = getEcsContainerSupportedIPFamilies(ecsContainerMetadataUri + ecsContainerMetadataTaskPath)
 		}
 		// The AZ info is available from ECS container metadata itself
-		if availabilityZone, exists := ecsMetadata[AvailabilityZoneKey]; exists {
-			mapping[AvailabilityZoneKey] = availabilityZone
-			delete(ecsMetadata, AvailabilityZoneKey)
+		if availabilityZone, exists := ecsMetadata[AvailabilityZone]; exists {
+			mapping[AvailabilityZone] = availabilityZone
+			delete(ecsMetadata, AvailabilityZone)
 		}
 		// The AZ ID info is available from ECS container metadata itself
-		if availabilityZoneID, exists := ecsMetadata[AvailabilityZoneIDKey]; exists {
-			mapping[AvailabilityZoneIDKey] = availabilityZoneID
-			delete(ecsMetadata, AvailabilityZoneIDKey)
+		if availabilityZoneID, exists := ecsMetadata[AvailabilityZoneID]; exists {
+			mapping[AvailabilityZoneID] = availabilityZoneID
+			delete(ecsMetadata, AvailabilityZoneID)
 		}
 
 		// Build SupportedIPFamilies info in platform
@@ -199,7 +199,7 @@ func GetZoneId(metadata *structpb.Struct) string {
 	}
 	metadataMap := metadata.AsMap()
 	if mapping := metadataMap[metadataNamespace]; mapping != nil {
-		if zoneId, ok := mapping.(map[string]interface{})[AvailabilityZoneIDKey].(string); ok {
+		if zoneId, ok := mapping.(map[string]interface{})[AvailabilityZoneID].(string); ok {
 			return zoneId
 		}
 	}
@@ -216,14 +216,17 @@ func getEcsContainerMetadata(uri string, ecsMetadata map[string]interface{}) {
 	// For reference on all the information that is returned from the task metadata endpoint, see
 	// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-metadata-endpoint-v4.html
 	// Here we only pick the ones that are needed.
-	if ecsClusterArn := metadataMap["Cluster"]; ecsClusterArn != "" {
+	if ecsClusterArn, exists := metadataMap["Cluster"]; exists {
 		ecsMetadata[ecsClusterArnKey] = ecsClusterArn
 	}
-	if ecsTaskArn := metadataMap["TaskARN"]; ecsTaskArn != "" {
+	if ecsTaskArn, exists := metadataMap["TaskARN"]; exists {
 		ecsMetadata[ecsTaskArnKey] = ecsTaskArn
 	}
-	if availabilityZone := metadataMap["AvailabilityZone"]; availabilityZone != "" {
-		ecsMetadata[AvailabilityZoneKey] = availabilityZone
+	if availabilityZone, exists := metadataMap["AvailabilityZone"]; exists {
+		ecsMetadata[AvailabilityZone] = availabilityZone
+	}
+	if availabilityZoneID, exists := metadataMap["AvailabilityZoneID"]; exists {
+		ecsMetadata[AvailabilityZoneID] = availabilityZoneID
 	}
 
 }
